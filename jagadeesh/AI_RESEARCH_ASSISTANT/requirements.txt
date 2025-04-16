@@ -1,0 +1,11 @@
+streamlit
+pyzotero
+pymupdf
+langchain
+nltk
+gensim
+numpy
+seaborn
+matplotlib
+scikit-learn
+langchain_google_genai
