@@ -1,0 +1,52 @@
+!pip install pytube moviepy openai-whisper
+!pip install yt-dlp
+!pip install fpdf
+
+
+import whisper
+import yt_dlp as youtube_dl
+from fpdf import FPDF
+
+# Download only the first 2 minutes of audio (FASTER!)
+def download_audio(url, output_path="join1.mp3"):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': output_path.rstrip('.mp3'),  # Ensure correct filename
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '32',  # Lower quality for faster transcription
+        }],
+
+        'quiet': True
+    }
+    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+    return output_path
+
+# Transcribe first 30-60 seconds of audio for FAST output
+def transcribe_audio(audio_file, output_pdf_file="join1.pdf"):
+    model = whisper.load_model("tiny")  # Use fastest model
+    result = model.transcribe(audio_file, fp16=False, word_timestamps=False)
+
+    # Save transcription to a PDF
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.multi_cell(0, 10, result["text"])
+    pdf.output(output_pdf_file)
+
+    return output_pdf_file
+
+# Main Execution
+if __name__ == "__main__":
+    video_url = input("Enter YouTube video URL: ")
+
+    print("🚀 Downloading audio...")
+    audio_file = download_audio(video_url)
+
+    print("🎤 Transcribing audio...")
+    pdf_file = transcribe_audio(audio_file)
+
+    print(f"\n✅ Done! Transcriptiohttps://youtu.be/0OQJDd3QqQM?si=fy1fD7VKww5DKwgRn saved in: {pdf_file}")

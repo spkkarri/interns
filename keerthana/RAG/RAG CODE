@@ -1,0 +1,115 @@
+!pip install -U langchain-community faiss-cpu langchain-huggingface pymupdf tiktoken langchain-ollama python-dotenv
+!pip install gradio
+
+#import os
+#import warnings
+import gradio as gr
+import faiss
+from langchain_community.document_loaders import PyMuPDFLoader, TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sentence_transformers import SentenceTransformer
+from langchain_community.vectorstores import FAISS
+from langchain_community.docstore.in_memory import InMemoryDocstore
+
+# Suppress warnings
+#os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+#warnings.filterwarnings("ignore")
+
+# Initialize Embedding Model
+def initialize_system():
+    global model, vector_store
+
+    # Use HuggingFace Sentence Transformer
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+
+    # Create FAISS Index
+    index = faiss.IndexFlatL2(384)  # Dimension of embeddings
+    vector_store = FAISS(
+        embedding_function=model.encode,
+        index=index,
+        docstore=InMemoryDocstore(),
+        index_to_docstore_id={}
+    )
+
+initialize_system()
+
+# Process PDF and Text Files
+def upload_files(files):
+    try:
+        if not files:
+            return "No files uploaded."
+
+        for file in files:
+            if file.name.endswith(".pdf"):
+                loader = PyMuPDFLoader(file.name)
+            elif file.name.endswith(".txt"):
+                loader = TextLoader(file.name)
+            else:
+                continue  # Skip unsupported file types
+
+            docs = loader.load()
+
+            if not docs:
+                return f"No text extracted from {file.name}."
+
+            # Split into chunks
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+            chunks = splitter.split_documents(docs)
+
+            if not chunks:
+                return f"Failed to split {file.name} into chunks."
+
+            # Add to vector store
+            vector_store.add_documents(documents=chunks)
+
+        return "All files loaded and processed successfully!"
+
+    except Exception as e:
+        return f"Error processing files: {str(e)}"
+
+# Generate Answer with Similarity Score Threshold
+def generate_answer(question):
+    try:
+        # Search the most relevant document with similarity score
+        docs = vector_store.similarity_search_with_score(query=question, k=1)  # Get top match with score
+
+        if not docs:  # No documents found
+            return "No relevant information found."
+
+        # Extract document and similarity score
+        doc, score = docs[0]
+
+        # Threshold set to 0.8 (FAISS scores are distances, lower is better)
+        if score > 1.2:  # If the match isn’t close enough, it’s not relevant
+            return "No relevant information found."
+
+        # Return the first match if it’s relevant
+        return doc.page_content
+
+    except Exception as e:
+        return f"Error generating response: {str(e)}"
+
+# Gradio Interface
+with gr.Blocks() as app:
+    gr.Markdown("# PDF & Text File Chatbot with AI Embeddings")
+
+    # Sidebar for Sources
+    with gr.Row():
+        with gr.Column(scale=1):
+            gr.Markdown("## Sources")
+            file_input = gr.File(label="Upload PDFs or Text Files", file_types=[".pdf", ".txt"], file_count="multiple")
+            upload_button = gr.Button("Process Files")
+            upload_output = gr.Textbox(label="Status")
+
+        # Chat Panel
+        with gr.Column(scale=3):
+            gr.Markdown("## Chat")
+            question_input = gr.Textbox(label="Ask a Question")
+            answer_output = gr.Textbox(label="Answer")
+            submit_button = gr.Button("Get Answer")
+
+    # Button actions
+    upload_button.click(upload_files, inputs=[file_input], outputs=[upload_output])
+    submit_button.click(generate_answer, inputs=[question_input], outputs=[answer_output])
+
+app.launch()
